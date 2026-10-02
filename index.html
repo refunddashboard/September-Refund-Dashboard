@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refund Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f4f7f9;--card:#fff;--text:#102a2f;--muted:#6b7d82;--accent:#0d6b70;--accent2:#15919a;--line:#dfe7e9;--shadow:0 8px 25px rgba(16,42,47,.08)}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+.header{background:#0b3f44;color:white;padding:24px 34px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.header h1{margin:0;font-size:26px}.header p{margin:6px 0 0;color:#c9e3e5;font-size:13px}
+.badge{background:#e6f5f3;color:#0b5d62;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:700}
+.container{max-width:1450px;margin:0 auto;padding:24px}
+.toolbar{background:var(--card);padding:16px;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+label{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+select,input{width:100%;height:40px;border:1px solid #ccd9dc;border-radius:9px;padding:0 11px;background:white;color:var(--text);outline:none}
+select:focus,input:focus{border-color:var(--accent)}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.kpi .label{font-size:11px;color:var(--muted);font-weight:700}.kpi .value{font-size:27px;font-weight:800;margin-top:7px}.kpi small{display:block;color:var(--muted);margin-top:5px}
+.grid{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-bottom:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);min-height:320px}
+.card h2{font-size:15px;margin:0 0 3px}.card p{font-size:12px;color:var(--muted);margin:0 0 12px}.chartbox{height:255px;position:relative}
+.tablecard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}.tablewrap{overflow:auto;max-height:520px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:11px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#edf5f5;color:#31565a;font-size:11px;text-transform:uppercase;letter-spacing:.04em}td.num{text-align:right}
+.status{display:inline-block;padding:5px 9px;border-radius:999px;background:#eaf5f5;color:#0b6267;font-weight:700;font-size:11px}
+.empty{padding:50px;text-align:center;color:var(--muted)}
+.footer{padding:18px 0;color:var(--muted);font-size:11px;text-align:center}
+@media(max-width:1050px){.toolbar,.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+@media(max-width:650px){.container{padding:12px}.header{padding:18px}.toolbar,.kpis{grid-template-columns:1fr}.header{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header class="header">
+  <div><h1>Refund Dashboard</h1><p>September Refunds • Interactive KPI & reporting view</p></div>
+  <div class="badge" id="sourceBadge">Loading refund data…</div>
+</header>
+
+<main class="container">
+  <section class="toolbar">
+    <div><label>Store</label><select id="storeFilter"><option value="">All stores</option></select></div>
+    <div><label>Status</label><select id="statusFilter"><option value="">All statuses</option></select></div>
+    <div><label>Reason</label><select id="reasonFilter"><option value="">All reasons</option></select></div>
+    <div><label>Currency</label><select id="currencyFilter"><option value="">All currencies</option></select></div>
+    <div><label>Search order</label><input id="searchFilter" placeholder="Order number…"></div>
+  </section>
+
+  <section class="kpis">
+    <div class="kpi"><div class="label">Refund records</div><div class="value" id="kpiRecords">—</div><small>Filtered rows</small></div>
+    <div class="kpi"><div class="label">Refunded orders</div><div class="value" id="kpiRefunded">—</div><small>Status = Refunded</small></div>
+    <div class="kpi"><div class="label">Refund rate</div><div class="value" id="kpiRate">—</div><small>Refunded ÷ records</small></div>
+    <div class="kpi"><div class="label">Currencies</div><div class="value" id="kpiCurrencies">—</div><small>Detected in refund values</small></div>
+    <div class="kpi"><div class="label">Top reason</div><div class="value" id="kpiReason" style="font-size:20px">—</div><small id="kpiReasonCount">—</small></div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Refunds by reason</h2><p>Number of refund records for each reason.</p><div class="chartbox"><canvas id="reasonChart"></canvas></div></div>
+    <div class="card"><h2>Refund status</h2><p>Current status distribution in the filtered data.</p><div class="chartbox"><canvas id="statusChart"></canvas></div></div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Refunds by store</h2><p>Record count by store.</p><div class="chartbox"><canvas id="storeChart"></canvas></div></div>
+    <div class="card"><h2>Refund value by currency</h2><p>Values are kept separate so GBP, USD and AUD are not incorrectly combined.</p><div class="chartbox"><canvas id="currencyChart"></canvas></div></div>
+  </section>
+
+  <section class="tablecard">
+    <h2 style="margin:0 0 3px;font-size:15px">Refund records</h2>
+    <p style="margin:0 0 12px;color:var(--muted);font-size:12px">Showing the filtered records from the Refunds - Dashboard file.</p>
+    <div id="tableArea" class="tablewrap"></div>
+  </section>
+  <div class="footer">Data source: Refunds-Dashboard.xlsx • Dashboard generated for GitHub Pages</div>
+</main>
+
+<script>
+let allRows=[], filteredRows=[];
+let charts={};
+
+const $=id=>document.getElementById(id);
+function clean(v){return v==null?'':String(v).trim();}
+function keyify(s){return clean(s).toLowerCase().replace(/[^a-z0-9]/g,'');}
+function findCol(row, names){
+  const keys=Object.keys(row), wanted=names.map(keyify);
+  return keys.find(k=>wanted.includes(keyify(k))) || keys.find(k=>wanted.some(w=>keyify(k).includes(w)));
+}
+function parseMoney(v){
+  const s=clean(v);
+  if(!s) return {amount:null,currency:'Unknown',display:''};
+  const n=s.replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);
+  const amount=n?Number(n[0]):null;
+  let currency='Other';
+  if(/£/.test(s)||/GBP/i.test(s)) currency='GBP';
+  else if(/AUD/i.test(s)) currency='AUD';
+  else if(/\$/.test(s)||/USD/i.test(s)) currency='USD';
+  else if(/€|EUR/i.test(s)) currency='EUR';
+  else if(/₱|PHP/i.test(s)) currency='PHP';
+  else if(amount!==null) currency='Other';
+  return {amount,currency,display:s};
+}
+function uniq(arr){return [...new Set(arr.filter(Boolean))].sort((a,b)=>a.localeCompare(b));}
+function fillSelect(id, values){
+  const el=$(id), current=el.value;
+  const first=el.options[0].text;
+  el.innerHTML='';
+  const opt=document.createElement('option');opt.value='';opt.textContent=first;el.appendChild(opt);
+  uniq(values).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;el.appendChild(o)});
+  if([...el.options].some(o=>o.value===current))el.value=current;
+}
+function countBy(rows, field){const m={};rows.forEach(r=>{const v=r[field]||'Unknown';m[v]=(m[v]||0)+1});return m}
+function formatNum(n){return new Intl.NumberFormat('en-GB').format(n)}
+function money(n,c){if(n==null)return '—';const sym={GBP:'£',USD:'$',AUD:'A$',EUR:'€',PHP:'₱'}[c]||'';return sym+new Intl.NumberFormat('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)}
+function destroyChart(name){if(charts[name]){charts[name].destroy();delete charts[name]}}
+function makeChart(name,type,labels,data,opts={}){
+  destroyChart(name);
+  charts[name]=new Chart($(opts.id||name),{type,data:{labels,datasets:[{label:opts.label||'',data,backgroundColor:['#0d6b70','#15919a','#4c9aa0','#7bb8bb','#a9d0d1','#d0e4e5','#efb35f','#d97878','#7567c8','#7b8794'],borderColor:'#0b3f44',borderWidth:type==='line'?2:1,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='doughnut',position:'bottom'}},scales:type==='doughnut'?{}:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#e7eeee'}}},...opts.extra}});
+}
+function update(){
+  const sf=$('storeFilter').value, st=$('statusFilter').value, rf=$('reasonFilter').value, cf=$('currencyFilter').value, q=$('searchFilter').value.toLowerCase().trim();
+  filteredRows=allRows.filter(r=>
+    (!sf||r.store===sf)&&(!st||r.status===st)&&(!rf||r.reason===rf)&&(!cf||r.currency===cf)&&(!q||String(r.order).toLowerCase().includes(q))
+  );
+  $('kpiRecords').textContent=formatNum(filteredRows.length);
+  const refunded=filteredRows.filter(r=>r.status.toLowerCase()==='refunded').length;
+  $('kpiRefunded').textContent=formatNum(refunded);
+  $('kpiRate').textContent=filteredRows.length?((refunded/filteredRows.length)*100).toFixed(1)+'%':'0%';
+  $('kpiCurrencies').textContent=uniq(filteredRows.map(r=>r.currency)).length;
+  const reasons=countBy(filteredRows,'reason'), top=Object.entries(reasons).sort((a,b)=>b[1]-a[1])[0];
+  $('kpiReason').textContent=top?top[0]:'—'; $('kpiReasonCount').textContent=top?formatNum(top[1])+' record(s)':'—';
+
+  const reasonEntries=Object.entries(reasons).sort((a,b)=>b[1]-a[1]);
+  makeChart('reasonChart','bar',reasonEntries.map(x=>x[0]),reasonEntries.map(x=>x[1]),{id:'reasonChart',extra:{indexAxis:'y'}});
+  const status=countBy(filteredRows,'status'), statusEntries=Object.entries(status);
+  destroyChart('statusChart'); charts.statusChart=new Chart($('statusChart'),{type:'doughnut',data:{labels:statusEntries.map(x=>x[0]),datasets:[{data:statusEntries.map(x=>x[1]),backgroundColor:['#0d6b70','#15919a','#efb35f','#d97878','#7567c8','#7b8794']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  const stores=countBy(filteredRows,'store'), storeEntries=Object.entries(stores).sort((a,b)=>b[1]-a[1]);
+  makeChart('storeChart','bar',storeEntries.map(x=>x[0]),storeEntries.map(x=>x[1]),{id:'storeChart',extra:{indexAxis:'y'}});
+  const currencies={}; filteredRows.forEach(r=>{if(r.amount!=null){currencies[r.currency]=(currencies[r.currency]||0)+r.amount}});
+  const ce=Object.entries(currencies);
+  makeChart('currencyChart','bar',ce.map(x=>x[0]),ce.map(x=>Number(x[1].toFixed(2))),{id:'currencyChart',extra:{plugins:{tooltip:{callbacks:{label:ctx=>money(ctx.raw,ctx.label)}}}}});
+
+  renderTable();
+}
+function renderTable(){
+  const area=$('tableArea');
+  if(!filteredRows.length){area.innerHTML='<div class="empty">No refund records match the selected filters.</div>';return}
+  const rows=filteredRows.slice(0,500);
+  let h='<table><thead><tr><th>Store</th><th>Order Number</th><th>Reason</th><th>Refund %</th><th>Refund Value</th><th>Currency</th><th>Status</th></tr></thead><tbody>';
+  rows.forEach(r=>{h+=`<tr><td>${esc(r.store)}</td><td>${esc(r.order)}</td><td>${esc(r.reason)}</td><td>${esc(r.refundPct)}</td><td class="num">${esc(r.refundDisplay||money(r.amount,r.currency))}</td><td>${esc(r.currency)}</td><td><span class="status">${esc(r.status)}</span></td></tr>`});
+  h+='</tbody></table>';
+  if(filteredRows.length>500)h+=`<div style="padding:12px;color:var(--muted);font-size:12px">Showing first 500 of ${formatNum(filteredRows.length)} matching records.</div>`;
+  area.innerHTML=h;
+}
+function esc(v){return clean(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+
+async function loadWorkbook(){
+  try{
+    const response=await fetch('./Refunds-Dashboard.xlsx');
+    if(!response.ok)throw new Error('Refunds-Dashboard.xlsx could not be loaded.');
+    const buf=await response.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const raw=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+    if(!raw.length)throw new Error('No rows found in the workbook.');
+    const sample=raw[0];
+    const cols={
+      store:findCol(sample,['Store']),order:findCol(sample,['Order Number','OrderNumber','Order']),
+      reason:findCol(sample,['Reason']),refundPct:findCol(sample,['Refund %','Refund%','Refund Percent']),
+      refundValue:findCol(sample,['Refund Value','RefundValue']),status:findCol(sample,['STATUS','Status'])
+    };
+    if(!cols.store||!cols.order||!cols.reason||!cols.refundValue||!cols.status)throw new Error('Expected refund columns were not found.');
+    allRows=raw.map(row=>{
+      const m=parseMoney(row[cols.refundValue]);
+      return {store:clean(row[cols.store]),order:clean(row[cols.order]),reason:clean(row[cols.reason])||'Unknown',refundPct:clean(row[cols.refundPct]),refundDisplay:clean(row[cols.refundValue]),amount:m.amount,currency:m.currency,status:clean(row[cols.status])||'Unknown'};
+    }).filter(r=>r.order||r.store);
+    fillSelect('storeFilter',allRows.map(r=>r.store));fillSelect('statusFilter',allRows.map(r=>r.status));fillSelect('reasonFilter',allRows.map(r=>r.reason));fillSelect('currencyFilter',allRows.map(r=>r.currency));
+    $('sourceBadge').textContent=allRows.length.toLocaleString()+' refund records loaded';
+    update();
+  }catch(e){
+    $('sourceBadge').textContent='Data load error';
+    $('tableArea').innerHTML='<div class="empty"><b>Could not load the refund data.</b><br>'+esc(e.message)+'<br><br>Make sure <b>Refunds-Dashboard.xlsx</b> is in the same GitHub repository as this page.</div>';
+  }
+}
+['storeFilter','statusFilter','reasonFilter','currencyFilter','searchFilter'].forEach(id=>$(id).addEventListener(id==='searchFilter'?'input':'change',update));
+loadWorkbook();
+</script>
+</body>
+</html>
